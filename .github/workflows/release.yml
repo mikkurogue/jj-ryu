@@ -36,10 +36,11 @@ jobs:
             platform: linux-arm64
             cross: true
 
-          # Linux musl
+          # Linux musl (use cross for both - handles OpenSSL)
           - os: ubuntu-22.04
             target: x86_64-unknown-linux-musl
             platform: linux-x64-musl
+            cross: true
           - os: ubuntu-22.04
             target: aarch64-unknown-linux-musl
             platform: linux-arm64-musl
@@ -63,10 +64,6 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
-      - name: Install musl-tools (x64)
-        if: matrix.target == 'x86_64-unknown-linux-musl'
-        run: sudo apt-get update && sudo apt-get install -y musl-tools
-
       - name: Install cross
         if: matrix.cross
         run: cargo install cross --git https://github.com/cross-rs/cross
@@ -89,6 +86,10 @@ jobs:
           mkdir -p dist
           cp target/${{ matrix.target }}/release/ryu dist/
           chmod +x dist/ryu
+
+      - name: Sign binary (macOS)
+        if: runner.os == 'macOS'
+        run: codesign --force --sign - dist/ryu
 
       - name: Prepare artifact (Windows)
         if: runner.os == 'Windows'

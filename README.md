@@ -31,6 +31,11 @@ cargo install jj-ryu
 
 Binary name is `ryu`.
 
+**macOS:** If you see "ryu can't be opened", run:
+```sh
+xattr -d com.apple.quarantine $(which ryu)
+```
+
 ## Quick start
 
 ```sh
