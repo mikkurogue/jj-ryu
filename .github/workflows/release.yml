@@ -204,7 +204,8 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
-          for platform in darwin-arm64 darwin-x64 linux-arm64 linux-x64 linux-arm64-musl linux-x64-musl win32-arm64 win32-x64; do
+          # Skip win32 packages for now (npm spam detection issue)
+          for platform in darwin-arm64 darwin-x64 linux-arm64 linux-x64 linux-arm64-musl linux-x64-musl; do
             echo "Publishing jj-ryu-$platform..."
             npm publish ./npm/$platform --access public --provenance || {
               if npm view "jj-ryu-$platform@${{ steps.version.outputs.version }}" > /dev/null 2>&1; then
