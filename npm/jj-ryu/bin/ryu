@@ -6,20 +6,20 @@ const { join } = require("path");
 
 const PLATFORMS = {
   win32: {
-    x64: "@jj-ryu/win32-x64/ryu.exe",
-    arm64: "@jj-ryu/win32-arm64/ryu.exe",
+    x64: "jj-ryu-win32-x64/ryu.exe",
+    arm64: "jj-ryu-win32-arm64/ryu.exe",
   },
   darwin: {
-    x64: "@jj-ryu/darwin-x64/ryu",
-    arm64: "@jj-ryu/darwin-arm64/ryu",
+    x64: "jj-ryu-darwin-x64/ryu",
+    arm64: "jj-ryu-darwin-arm64/ryu",
   },
   linux: {
-    x64: "@jj-ryu/linux-x64/ryu",
-    arm64: "@jj-ryu/linux-arm64/ryu",
+    x64: "jj-ryu-linux-x64/ryu",
+    arm64: "jj-ryu-linux-arm64/ryu",
   },
   "linux-musl": {
-    x64: "@jj-ryu/linux-x64-musl/ryu",
-    arm64: "@jj-ryu/linux-arm64-musl/ryu",
+    x64: "jj-ryu-linux-x64-musl/ryu",
+    arm64: "jj-ryu-linux-arm64-musl/ryu",
   },
 };
 
