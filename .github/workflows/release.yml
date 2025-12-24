@@ -1,13 +1,10 @@
 name: Release
 
 on:
-  push:
-    tags:
-      - "v*"
   workflow_dispatch:
     inputs:
-      tag:
-        description: 'Tag to release (e.g., v0.1.0)'
+      version:
+        description: "Version to release (e.g., 0.1.0, 0.2.0-beta.1)"
         required: true
         type: string
 
@@ -15,29 +12,108 @@ permissions:
   contents: write
   id-token: write
 
+concurrency:
+  group: release
+  cancel-in-progress: false
+
 env:
   CARGO_INCREMENTAL: 0
   CARGO_TERM_COLOR: always
 
 jobs:
+  validate:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Validate version
+        id: version
+        run: |
+          VERSION="${{ inputs.version }}"
+          VERSION="${VERSION#v}"
+          if ! npx --yes semver "$VERSION" > /dev/null 2>&1; then
+            echo "::error::Invalid semver: $VERSION"
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Check tag doesn't exist
+        run: |
+          if git rev-parse "v${{ steps.version.outputs.version }}" >/dev/null 2>&1; then
+            echo "::error::Tag v${{ steps.version.outputs.version }} already exists"
+            exit 1
+          fi
+
+      - name: Check on main branch
+        run: |
+          if [ "${{ github.ref_name }}" != "main" ]; then
+            echo "::error::Releases must be triggered from main branch"
+            exit 1
+          fi
+
   test:
+    needs: validate
     uses: ./.github/workflows/test.yml
 
+  prepare:
+    needs: [validate, test]
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ needs.validate.outputs.version }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Update Cargo.toml version
+        run: |
+          sed -i 's/^version = ".*"/version = "${{ needs.validate.outputs.version }}"/' Cargo.toml
+
+      - name: Update Cargo.lock
+        run: cargo update -p jj-ryu --precise ${{ needs.validate.outputs.version }}
+
+      - name: Update npm package versions
+        run: node npm/scripts/update-versions.mjs ${{ needs.validate.outputs.version }}
+
+      - name: Commit and tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Cargo.toml Cargo.lock npm/
+          git commit -m "release: v${{ needs.validate.outputs.version }}"
+          git tag "v${{ needs.validate.outputs.version }}"
+          git push origin main
+          git push origin "v${{ needs.validate.outputs.version }}"
+
   build:
-    needs: test
+    needs: prepare
     strategy:
       fail-fast: false
       matrix:
         include:
-          # macOS
           - os: macos-latest
             target: x86_64-apple-darwin
             platform: darwin-x64
           - os: macos-latest
             target: aarch64-apple-darwin
             platform: darwin-arm64
-
-          # Linux glibc
           - os: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
             platform: linux-x64
@@ -45,8 +121,6 @@ jobs:
             target: aarch64-unknown-linux-gnu
             platform: linux-arm64
             cross: true
-
-          # Linux musl (use cross for both - handles OpenSSL)
           - os: ubuntu-22.04
             target: x86_64-unknown-linux-musl
             platform: linux-x64-musl
@@ -55,8 +129,6 @@ jobs:
             target: aarch64-unknown-linux-musl
             platform: linux-arm64-musl
             cross: true
-
-          # Windows
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             platform: win32-x64
@@ -69,7 +141,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.tag || github.ref }}
+          ref: v${{ needs.prepare.outputs.version }}
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -78,7 +150,7 @@ jobs:
 
       - name: Install cross
         if: matrix.cross
-        run: cargo install cross --git https://github.com/cross-rs/cross
+        uses: taiki-e/install-action@cross
 
       - name: Build (cross)
         if: matrix.cross
@@ -117,15 +189,14 @@ jobs:
           path: dist/
           if-no-files-found: error
 
-  # Create GitHub release with binaries
   release:
-    needs: build
+    needs: [prepare, build]
     runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.tag || github.ref }}
+          ref: v${{ needs.prepare.outputs.version }}
 
       - name: Download all artifacts
         uses: actions/download-artifact@v4
@@ -143,24 +214,28 @@ jobs:
               (cd "$platform" && tar -czvf "../../release/ryu-${name}.tar.gz" .)
             fi
           done
-          ls -la release/
+
+      - name: Generate checksums
+        run: |
+          cd release
+          sha256sum * > checksums-sha256.txt
+          cat checksums-sha256.txt
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ inputs.tag || github.ref_name }}
+          tag_name: v${{ needs.prepare.outputs.version }}
           files: release/*
           generate_release_notes: true
 
-  # Publish to npm
   publish-npm:
-    needs: build
+    needs: [prepare, build]
     runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.tag || github.ref }}
+          ref: v${{ needs.prepare.outputs.version }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -173,61 +248,30 @@ jobs:
         with:
           path: artifacts
 
-      - name: Get version from tag
-        id: version
-        run: |
-          if [ -n "${{ inputs.tag }}" ]; then
-            TAG="${{ inputs.tag }}"
-          else
-            TAG="${GITHUB_REF#refs/tags/}"
-          fi
-          echo "version=${TAG#v}" >> $GITHUB_OUTPUT
-
       - name: Prepare platform packages
         run: |
-          VERSION=${{ steps.version.outputs.version }}
-
-          # Generate package.json and copy binary for each platform
+          VERSION=${{ needs.prepare.outputs.version }}
           for platform in darwin-arm64 darwin-x64 linux-arm64 linux-x64 linux-arm64-musl linux-x64-musl win32-arm64 win32-x64; do
             mkdir -p npm/$platform
-
-            # Copy binary
             if [[ "$platform" == win32-* ]]; then
               cp artifacts/$platform/ryu.exe npm/$platform/
             else
               cp artifacts/$platform/ryu npm/$platform/
               chmod +x npm/$platform/ryu
             fi
-
-            # Generate package.json
             node npm/scripts/generate-platform-package.mjs $platform $VERSION
           done
-
-      - name: Update main package version
-        run: |
-          VERSION=${{ steps.version.outputs.version }}
-          cd npm/jj-ryu
-
-          # Update version and optionalDependencies versions
-          node -e "
-            const fs = require('fs');
-            const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
-            pkg.version = '$VERSION';
-            for (const dep of Object.keys(pkg.optionalDependencies)) {
-              pkg.optionalDependencies[dep] = '$VERSION';
-            }
-            fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
-          "
 
       - name: Publish platform packages
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
+          VERSION=${{ needs.prepare.outputs.version }}
           # Skip win32 packages for now (npm spam detection issue)
           for platform in darwin-arm64 darwin-x64 linux-arm64 linux-x64 linux-arm64-musl linux-x64-musl; do
             echo "Publishing jj-ryu-$platform..."
             npm publish ./npm/$platform --access public --provenance || {
-              if npm view "jj-ryu-$platform@${{ steps.version.outputs.version }}" > /dev/null 2>&1; then
+              if npm view "jj-ryu-$platform@$VERSION" > /dev/null 2>&1; then
                 echo "Version already published, skipping"
               else
                 exit 1
@@ -239,24 +283,24 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
+          VERSION=${{ needs.prepare.outputs.version }}
           echo "Publishing jj-ryu..."
           npm publish ./npm/jj-ryu --access public --provenance || {
-            if npm view "jj-ryu@${{ steps.version.outputs.version }}" > /dev/null 2>&1; then
+            if npm view "jj-ryu@$VERSION" > /dev/null 2>&1; then
               echo "Version already published, skipping"
             else
               exit 1
             fi
           }
 
-  # Publish to crates.io
   publish-crates:
-    needs: build
+    needs: [prepare, build]
     runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.tag || github.ref }}
+          ref: v${{ needs.prepare.outputs.version }}
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -277,3 +321,19 @@ jobs:
             echo "$OUTPUT"
             exit $EXIT_CODE
           fi
+
+  summary:
+    needs: [prepare, release, publish-npm, publish-crates]
+    runs-on: ubuntu-latest
+    if: always()
+
+    steps:
+      - name: Summary
+        run: |
+          echo "## Release v${{ needs.prepare.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Component | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| GitHub Release | ${{ needs.release.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| npm | ${{ needs.publish-npm.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| crates.io | ${{ needs.publish-crates.result }} |" >> $GITHUB_STEP_SUMMARY
