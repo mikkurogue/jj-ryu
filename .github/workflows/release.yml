@@ -322,8 +322,40 @@ jobs:
             exit $EXIT_CODE
           fi
 
+  homebrew:
+    needs: [prepare, release]
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Get tarball SHA256
+        id: sha
+        run: |
+          sha=$(curl -sL https://github.com/dmmulroy/jj-ryu/archive/refs/tags/v${{ needs.prepare.outputs.version }}.tar.gz | shasum -a 256 | cut -d' ' -f1)
+          echo "sha256=$sha" >> $GITHUB_OUTPUT
+
+      - name: Checkout homebrew-tap
+        uses: actions/checkout@v4
+        with:
+          repository: dmmulroy/homebrew-tap
+          token: ${{ secrets.TAP_GITHUB_TOKEN }}
+
+      - name: Update formula
+        run: |
+          sed -i 's|url ".*"|url "https://github.com/dmmulroy/jj-ryu/archive/refs/tags/v${{ needs.prepare.outputs.version }}.tar.gz"|' Formula/jj-ryu.rb
+          sed -i 's|sha256 ".*"|sha256 "${{ steps.sha.outputs.sha256 }}"|' Formula/jj-ryu.rb
+
+      - name: Create PR
+        uses: peter-evans/create-pull-request@v7
+        with:
+          token: ${{ secrets.TAP_GITHUB_TOKEN }}
+          commit-message: "Update jj-ryu to v${{ needs.prepare.outputs.version }}"
+          title: "Update jj-ryu to v${{ needs.prepare.outputs.version }}"
+          body: "Automated update from [jj-ryu release](https://github.com/dmmulroy/jj-ryu/releases/tag/v${{ needs.prepare.outputs.version }})"
+          branch: update-jj-ryu-${{ needs.prepare.outputs.version }}
+          base: main
+
   summary:
-    needs: [prepare, release, publish-npm, publish-crates]
+    needs: [prepare, release, publish-npm, publish-crates, homebrew]
     runs-on: ubuntu-latest
     if: always()
 
@@ -337,3 +369,4 @@ jobs:
           echo "| GitHub Release | ${{ needs.release.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "| npm | ${{ needs.publish-npm.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "| crates.io | ${{ needs.publish-crates.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Homebrew | ${{ needs.homebrew.result }} |" >> $GITHUB_STEP_SUMMARY
