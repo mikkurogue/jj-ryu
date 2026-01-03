@@ -93,11 +93,7 @@ pub const STACK_COMMENT_THIS_PR: &str = "👈";
 // =============================================================================
 
 /// Execute a push step
-pub fn execute_push(
-    workspace: &mut JjWorkspace,
-    bookmark: &Bookmark,
-    remote: &str,
-) -> StepOutcome {
+pub fn execute_push(workspace: &mut JjWorkspace, bookmark: &Bookmark, remote: &str) -> StepOutcome {
     match workspace.git_push(&bookmark.name, remote) {
         Ok(()) => StepOutcome::Success(None),
         Err(e) => StepOutcome::FatalError(format!("Failed to push {}: {e}", bookmark.name)),
@@ -113,9 +109,7 @@ pub async fn execute_update_base(
         .update_pr_base(update.pr.number, &update.expected_base)
         .await
     {
-        Ok(updated_pr) => {
-            StepOutcome::Success(Some((update.bookmark.name.clone(), updated_pr)))
-        }
+        Ok(updated_pr) => StepOutcome::Success(Some((update.bookmark.name.clone(), updated_pr))),
         Err(e) => StepOutcome::FatalError(format!(
             "Failed to update PR base for {}: {e}",
             update.bookmark.name
@@ -124,10 +118,7 @@ pub async fn execute_update_base(
 }
 
 /// Execute a create PR step
-pub async fn execute_create_pr(
-    platform: &dyn PlatformService,
-    create: &PrToCreate,
-) -> StepOutcome {
+pub async fn execute_create_pr(platform: &dyn PlatformService, create: &PrToCreate) -> StepOutcome {
     match platform
         .create_pr_with_options(
             &create.bookmark.name,
@@ -146,10 +137,7 @@ pub async fn execute_create_pr(
 }
 
 /// Execute a publish PR step (soft fail on error)
-pub async fn execute_publish_pr(
-    platform: &dyn PlatformService,
-    pr: &PullRequest,
-) -> StepOutcome {
+pub async fn execute_publish_pr(platform: &dyn PlatformService, pr: &PullRequest) -> StepOutcome {
     match platform.publish_pr(pr.number).await {
         Ok(updated_pr) => StepOutcome::Success(Some((pr.head_ref.clone(), updated_pr))),
         Err(e) => StepOutcome::SoftError(format!("Failed to publish PR #{}: {e}", pr.number)),

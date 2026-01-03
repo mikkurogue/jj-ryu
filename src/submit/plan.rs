@@ -71,7 +71,11 @@ impl std::fmt::Display for ExecutionStep {
                 update.bookmark.name, update.pr.number, update.current_base, update.expected_base
             ),
             Self::CreatePr(create) => {
-                write!(f, "create PR {} → {} ({})", create.bookmark.name, create.base_branch, create.title)?;
+                write!(
+                    f,
+                    "create PR {} → {} ({})",
+                    create.bookmark.name, create.base_branch, create.title
+                )?;
                 if create.draft {
                     write!(f, " [draft]")?;
                 }
@@ -406,7 +410,8 @@ fn build_execution_steps(
     let stack_index = build_stack_index(segments);
 
     // Phase 1: Collect semantic constraints (declarative, no indices)
-    let constraints = collect_constraints(segments, prs_to_update_base, prs_to_create, &stack_index);
+    let constraints =
+        collect_constraints(segments, prs_to_update_base, prs_to_create, &stack_index);
 
     tracing::debug!(
         constraint_count = constraints.len(),
@@ -594,7 +599,10 @@ fn build_execution_nodes(
 ///
 /// Constraints that reference non-existent nodes are silently skipped.
 /// This is expected: e.g., a Push constraint for an already-synced bookmark.
-fn resolve_constraints(constraints: &[ExecutionConstraint], registry: &NodeRegistry) -> Vec<Vec<usize>> {
+fn resolve_constraints(
+    constraints: &[ExecutionConstraint],
+    registry: &NodeRegistry,
+) -> Vec<Vec<usize>> {
     let mut edges = vec![Vec::new(); registry.len()];
 
     for constraint in constraints {
@@ -655,7 +663,9 @@ fn topo_sort_steps(nodes: &[ExecutionNode], edges: &[Vec<usize>]) -> Result<Vec<
         );
 
         return Err(Error::SchedulerCycle {
-            message: "Dependency cycle in execution plan - this is a bug in jj-ryu, please report it".to_string(),
+            message:
+                "Dependency cycle in execution plan - this is a bug in jj-ryu, please report it"
+                    .to_string(),
             cycle_nodes,
         });
     }
@@ -722,7 +732,10 @@ mod tests {
         }
     }
 
-    fn find_step_index(steps: &[ExecutionStep], predicate: impl Fn(&ExecutionStep) -> bool) -> Option<usize> {
+    fn find_step_index(
+        steps: &[ExecutionStep],
+        predicate: impl Fn(&ExecutionStep) -> bool,
+    ) -> Option<usize> {
         steps.iter().position(predicate)
     }
 
@@ -761,12 +774,22 @@ mod tests {
             make_bookmark("b", false, false),
         ];
 
-        let (_constraints, steps) = build_execution_steps(&segments, &pushes, &[], &[], &[]).unwrap();
+        let (_constraints, steps) =
+            build_execution_steps(&segments, &pushes, &[], &[], &[]).unwrap();
 
-        let push_a = find_step_index(&steps, |s| matches!(s, ExecutionStep::Push(b) if b.name == "a"));
-        let push_b = find_step_index(&steps, |s| matches!(s, ExecutionStep::Push(b) if b.name == "b"));
+        let push_a = find_step_index(
+            &steps,
+            |s| matches!(s, ExecutionStep::Push(b) if b.name == "a"),
+        );
+        let push_b = find_step_index(
+            &steps,
+            |s| matches!(s, ExecutionStep::Push(b) if b.name == "b"),
+        );
 
-        assert!(push_a.unwrap() < push_b.unwrap(), "pushes should follow stack order");
+        assert!(
+            push_a.unwrap() < push_b.unwrap(),
+            "pushes should follow stack order"
+        );
     }
 
     #[test]
@@ -776,10 +799,19 @@ mod tests {
         let pushes = vec![bm_a.clone()];
         let creates = vec![make_create(&bm_a, "main")];
 
-        let (_constraints, steps) = build_execution_steps(&segments, &pushes, &[], &creates, &[]).unwrap();
+        let (_constraints, steps) =
+            build_execution_steps(&segments, &pushes, &[], &creates, &[]).unwrap();
 
-        let push_a = find_step_index(&steps, |s| matches!(s, ExecutionStep::Push(b) if b.name == "a")).unwrap();
-        let create_a = find_step_index(&steps, |s| matches!(s, ExecutionStep::CreatePr(c) if c.bookmark.name == "a")).unwrap();
+        let push_a = find_step_index(
+            &steps,
+            |s| matches!(s, ExecutionStep::Push(b) if b.name == "a"),
+        )
+        .unwrap();
+        let create_a = find_step_index(
+            &steps,
+            |s| matches!(s, ExecutionStep::CreatePr(c) if c.bookmark.name == "a"),
+        )
+        .unwrap();
 
         assert!(push_a < create_a, "push must happen before create");
     }
@@ -792,10 +824,19 @@ mod tests {
         let pushes = vec![bm_a.clone(), bm_b.clone()];
         let creates = vec![make_create(&bm_a, "main"), make_create(&bm_b, "a")];
 
-        let (_constraints, steps) = build_execution_steps(&segments, &pushes, &[], &creates, &[]).unwrap();
+        let (_constraints, steps) =
+            build_execution_steps(&segments, &pushes, &[], &creates, &[]).unwrap();
 
-        let create_a = find_step_index(&steps, |s| matches!(s, ExecutionStep::CreatePr(c) if c.bookmark.name == "a")).unwrap();
-        let create_b = find_step_index(&steps, |s| matches!(s, ExecutionStep::CreatePr(c) if c.bookmark.name == "b")).unwrap();
+        let create_a = find_step_index(
+            &steps,
+            |s| matches!(s, ExecutionStep::CreatePr(c) if c.bookmark.name == "a"),
+        )
+        .unwrap();
+        let create_b = find_step_index(
+            &steps,
+            |s| matches!(s, ExecutionStep::CreatePr(c) if c.bookmark.name == "b"),
+        )
+        .unwrap();
 
         assert!(create_a < create_b, "creates should follow stack order");
     }
@@ -814,14 +855,30 @@ mod tests {
             make_update(&bm_a, "main", "b", 1), // A was on main, now on B
         ];
 
-        let (_constraints, steps) = build_execution_steps(&segments, &pushes, &updates, &[], &[]).unwrap();
+        let (_constraints, steps) =
+            build_execution_steps(&segments, &pushes, &updates, &[], &[]).unwrap();
 
-        let retarget_b = find_step_index(&steps, |s| matches!(s, ExecutionStep::UpdateBase(u) if u.bookmark.name == "b")).unwrap();
-        let push_a = find_step_index(&steps, |s| matches!(s, ExecutionStep::Push(b) if b.name == "a")).unwrap();
-        let push_b = find_step_index(&steps, |s| matches!(s, ExecutionStep::Push(b) if b.name == "b")).unwrap();
+        let retarget_b = find_step_index(
+            &steps,
+            |s| matches!(s, ExecutionStep::UpdateBase(u) if u.bookmark.name == "b"),
+        )
+        .unwrap();
+        let push_a = find_step_index(
+            &steps,
+            |s| matches!(s, ExecutionStep::Push(b) if b.name == "a"),
+        )
+        .unwrap();
+        let push_b = find_step_index(
+            &steps,
+            |s| matches!(s, ExecutionStep::Push(b) if b.name == "b"),
+        )
+        .unwrap();
 
         assert!(retarget_b < push_a, "b must move off a before pushing a");
-        assert!(push_b < push_a, "push order should follow new stack (b before a)");
+        assert!(
+            push_b < push_a,
+            "push order should follow new stack (b before a)"
+        );
     }
 
     #[test]

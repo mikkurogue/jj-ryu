@@ -14,7 +14,10 @@ use jj_ryu::submit::{ExecutionStep, analyze_submission, create_submission_plan};
 // =============================================================================
 
 /// Find the index of a step matching a predicate
-fn find_step_index(steps: &[ExecutionStep], predicate: impl Fn(&ExecutionStep) -> bool) -> Option<usize> {
+fn find_step_index(
+    steps: &[ExecutionStep],
+    predicate: impl Fn(&ExecutionStep) -> bool,
+) -> Option<usize> {
     steps.iter().position(predicate)
 }
 
@@ -24,10 +27,7 @@ fn assert_step_order(steps: &[ExecutionStep], description: &str, idx_a: usize, i
         idx_a < idx_b,
         "{description}: expected step at index {idx_a} before step at index {idx_b}, \
          but got order {:?}",
-        steps
-            .iter()
-            .map(ToString::to_string)
-            .collect::<Vec<_>>()
+        steps.iter().map(ToString::to_string).collect::<Vec<_>>()
     );
 }
 
@@ -70,8 +70,14 @@ async fn test_swap_scenario_retarget_before_push() {
         .expect("create plan");
 
     // Verify we have the expected operations
-    assert!(plan.count_updates() >= 1, "should have base updates for swapped PRs");
-    assert!(plan.count_pushes() >= 1, "should have pushes for changed branches");
+    assert!(
+        plan.count_updates() >= 1,
+        "should have base updates for swapped PRs"
+    );
+    assert!(
+        plan.count_pushes() >= 1,
+        "should have pushes for changed branches"
+    );
 
     // Critical assertion: UpdateBase operations must happen at correct time relative to pushes
     // B's PR needs to be retargeted from feat-a to main BEFORE we push the new A
@@ -79,14 +85,16 @@ async fn test_swap_scenario_retarget_before_push() {
     let steps = &plan.execution_steps;
 
     // Find UpdateBase for B (changing from feat-a to main)
-    let update_b_idx = find_step_index(steps, |s| {
-        matches!(s, ExecutionStep::UpdateBase(u) if u.bookmark.name == "feat-b")
-    });
+    let update_b_idx = find_step_index(
+        steps,
+        |s| matches!(s, ExecutionStep::UpdateBase(u) if u.bookmark.name == "feat-b"),
+    );
 
     // Find Push for A
-    let push_a_idx = find_step_index(steps, |s| {
-        matches!(s, ExecutionStep::Push(b) if b.name == "feat-a")
-    });
+    let push_a_idx = find_step_index(
+        steps,
+        |s| matches!(s, ExecutionStep::Push(b) if b.name == "feat-a"),
+    );
 
     // If B had A as its base and we're swapping, B's retarget should happen
     // This test verifies the constraint system handles the swap correctly
@@ -107,7 +115,11 @@ async fn test_swap_scenario_retarget_before_push() {
 #[tokio::test]
 async fn test_three_level_swap_middle_to_root() {
     let repo = TempJjRepo::new();
-    repo.build_stack(&[("feat-a", "Add A"), ("feat-b", "Add B"), ("feat-c", "Add C")]);
+    repo.build_stack(&[
+        ("feat-a", "Add A"),
+        ("feat-b", "Add B"),
+        ("feat-c", "Add C"),
+    ]);
 
     // Move B to be the root (before A)
     repo.rebase_before("feat-b", "feat-a");
@@ -162,10 +174,26 @@ async fn test_push_order_follows_stack_structure() {
     assert_eq!(plan.count_pushes(), 4, "all 4 bookmarks need push");
 
     let steps = &plan.execution_steps;
-    let push_a = find_step_index(steps, |s| matches!(s, ExecutionStep::Push(b) if b.name == "feat-a")).unwrap();
-    let push_b = find_step_index(steps, |s| matches!(s, ExecutionStep::Push(b) if b.name == "feat-b")).unwrap();
-    let push_c = find_step_index(steps, |s| matches!(s, ExecutionStep::Push(b) if b.name == "feat-c")).unwrap();
-    let push_d = find_step_index(steps, |s| matches!(s, ExecutionStep::Push(b) if b.name == "feat-d")).unwrap();
+    let push_a = find_step_index(
+        steps,
+        |s| matches!(s, ExecutionStep::Push(b) if b.name == "feat-a"),
+    )
+    .unwrap();
+    let push_b = find_step_index(
+        steps,
+        |s| matches!(s, ExecutionStep::Push(b) if b.name == "feat-b"),
+    )
+    .unwrap();
+    let push_c = find_step_index(
+        steps,
+        |s| matches!(s, ExecutionStep::Push(b) if b.name == "feat-c"),
+    )
+    .unwrap();
+    let push_d = find_step_index(
+        steps,
+        |s| matches!(s, ExecutionStep::Push(b) if b.name == "feat-d"),
+    )
+    .unwrap();
 
     assert_step_order(steps, "Push(A) before Push(B)", push_a, push_b);
     assert_step_order(steps, "Push(B) before Push(C)", push_b, push_c);
@@ -176,7 +204,11 @@ async fn test_push_order_follows_stack_structure() {
 #[tokio::test]
 async fn test_create_order_respects_stack_for_comment_linking() {
     let repo = TempJjRepo::new();
-    repo.build_stack(&[("feat-a", "Add A"), ("feat-b", "Add B"), ("feat-c", "Add C")]);
+    repo.build_stack(&[
+        ("feat-a", "Add A"),
+        ("feat-b", "Add B"),
+        ("feat-c", "Add C"),
+    ]);
 
     let workspace = repo.workspace();
     let graph = build_change_graph(&workspace).expect("build graph");
@@ -192,9 +224,21 @@ async fn test_create_order_respects_stack_for_comment_linking() {
     assert_eq!(plan.count_creates(), 3);
 
     let steps = &plan.execution_steps;
-    let create_a = find_step_index(steps, |s| matches!(s, ExecutionStep::CreatePr(c) if c.bookmark.name == "feat-a")).unwrap();
-    let create_b = find_step_index(steps, |s| matches!(s, ExecutionStep::CreatePr(c) if c.bookmark.name == "feat-b")).unwrap();
-    let create_c = find_step_index(steps, |s| matches!(s, ExecutionStep::CreatePr(c) if c.bookmark.name == "feat-c")).unwrap();
+    let create_a = find_step_index(
+        steps,
+        |s| matches!(s, ExecutionStep::CreatePr(c) if c.bookmark.name == "feat-a"),
+    )
+    .unwrap();
+    let create_b = find_step_index(
+        steps,
+        |s| matches!(s, ExecutionStep::CreatePr(c) if c.bookmark.name == "feat-b"),
+    )
+    .unwrap();
+    let create_c = find_step_index(
+        steps,
+        |s| matches!(s, ExecutionStep::CreatePr(c) if c.bookmark.name == "feat-c"),
+    )
+    .unwrap();
 
     assert_step_order(steps, "CreatePr(A) before CreatePr(B)", create_a, create_b);
     assert_step_order(steps, "CreatePr(B) before CreatePr(C)", create_b, create_c);
@@ -220,8 +264,16 @@ async fn test_push_before_create_constraint() {
     assert_eq!(plan.count_creates(), 1);
 
     let steps = &plan.execution_steps;
-    let push_a = find_step_index(steps, |s| matches!(s, ExecutionStep::Push(b) if b.name == "feat-a")).unwrap();
-    let create_a = find_step_index(steps, |s| matches!(s, ExecutionStep::CreatePr(c) if c.bookmark.name == "feat-a")).unwrap();
+    let push_a = find_step_index(
+        steps,
+        |s| matches!(s, ExecutionStep::Push(b) if b.name == "feat-a"),
+    )
+    .unwrap();
+    let create_a = find_step_index(
+        steps,
+        |s| matches!(s, ExecutionStep::CreatePr(c) if c.bookmark.name == "feat-a"),
+    )
+    .unwrap();
 
     assert_step_order(steps, "Push(A) before CreatePr(A)", push_a, create_a);
 }
@@ -248,8 +300,14 @@ async fn test_push_before_retarget_constraint() {
     // Should have: Push(A), Push(B), UpdateBase(B), CreatePr(A)
     let steps = &plan.execution_steps;
 
-    let push_a = find_step_index(steps, |s| matches!(s, ExecutionStep::Push(b) if b.name == "feat-a"));
-    let update_b = find_step_index(steps, |s| matches!(s, ExecutionStep::UpdateBase(u) if u.bookmark.name == "feat-b"));
+    let push_a = find_step_index(
+        steps,
+        |s| matches!(s, ExecutionStep::Push(b) if b.name == "feat-a"),
+    );
+    let update_b = find_step_index(
+        steps,
+        |s| matches!(s, ExecutionStep::UpdateBase(u) if u.bookmark.name == "feat-b"),
+    );
 
     // Push(A) must happen before UpdateBase(B) because B's new base is A
     if let (Some(push_idx), Some(update_idx)) = (push_a, update_b) {
@@ -270,7 +328,11 @@ async fn test_push_before_retarget_constraint() {
 #[tokio::test]
 async fn test_partial_existing_prs_mixed_operations() {
     let repo = TempJjRepo::new();
-    repo.build_stack(&[("feat-a", "Add A"), ("feat-b", "Add B"), ("feat-c", "Add C")]);
+    repo.build_stack(&[
+        ("feat-a", "Add A"),
+        ("feat-b", "Add B"),
+        ("feat-c", "Add C"),
+    ]);
 
     let workspace = repo.workspace();
     let graph = build_change_graph(&workspace).expect("build graph");
@@ -298,16 +360,28 @@ async fn test_partial_existing_prs_mixed_operations() {
     let steps = &plan.execution_steps;
 
     // Push(A) should come before UpdateBase(B)
-    let push_a = find_step_index(steps, |s| matches!(s, ExecutionStep::Push(b) if b.name == "feat-a"));
-    let update_b = find_step_index(steps, |s| matches!(s, ExecutionStep::UpdateBase(u) if u.bookmark.name == "feat-b"));
+    let push_a = find_step_index(
+        steps,
+        |s| matches!(s, ExecutionStep::Push(b) if b.name == "feat-a"),
+    );
+    let update_b = find_step_index(
+        steps,
+        |s| matches!(s, ExecutionStep::UpdateBase(u) if u.bookmark.name == "feat-b"),
+    );
 
     if let (Some(push_idx), Some(update_idx)) = (push_a, update_b) {
         assert_step_order(steps, "Push(A) before UpdateBase(B)", push_idx, update_idx);
     }
 
     // Push(C) should come before CreatePr(C)
-    let push_c = find_step_index(steps, |s| matches!(s, ExecutionStep::Push(b) if b.name == "feat-c"));
-    let create_c = find_step_index(steps, |s| matches!(s, ExecutionStep::CreatePr(c) if c.bookmark.name == "feat-c"));
+    let push_c = find_step_index(
+        steps,
+        |s| matches!(s, ExecutionStep::Push(b) if b.name == "feat-c"),
+    );
+    let create_c = find_step_index(
+        steps,
+        |s| matches!(s, ExecutionStep::CreatePr(c) if c.bookmark.name == "feat-c"),
+    );
 
     if let (Some(push_idx), Some(create_idx)) = (push_c, create_c) {
         assert_step_order(steps, "Push(C) before CreatePr(C)", push_idx, create_idx);
@@ -374,7 +448,11 @@ async fn test_constraints_skip_synced_bookmarks() {
 #[tokio::test]
 async fn test_all_prs_exist_correct_bases() {
     let repo = TempJjRepo::new();
-    repo.build_stack(&[("feat-a", "Add A"), ("feat-b", "Add B"), ("feat-c", "Add C")]);
+    repo.build_stack(&[
+        ("feat-a", "Add A"),
+        ("feat-b", "Add B"),
+        ("feat-c", "Add C"),
+    ]);
 
     let workspace = repo.workspace();
     let graph = build_change_graph(&workspace).expect("build graph");
@@ -434,9 +512,10 @@ async fn test_ten_level_stack_ordering() {
     let mut prev_push_idx = None;
     for i in 0..10 {
         let name = format!("feat-{i}");
-        let push_idx = find_step_index(steps, |s| {
-            matches!(s, ExecutionStep::Push(b) if b.name == name)
-        })
+        let push_idx = find_step_index(
+            steps,
+            |s| matches!(s, ExecutionStep::Push(b) if b.name == name),
+        )
         .unwrap_or_else(|| panic!("Push for {name} not found"));
 
         if let Some(prev) = prev_push_idx {
@@ -453,9 +532,10 @@ async fn test_ten_level_stack_ordering() {
     let mut prev_create_idx = None;
     for i in 0..10 {
         let name = format!("feat-{i}");
-        let create_idx = find_step_index(steps, |s| {
-            matches!(s, ExecutionStep::CreatePr(c) if c.bookmark.name == name)
-        })
+        let create_idx = find_step_index(
+            steps,
+            |s| matches!(s, ExecutionStep::CreatePr(c) if c.bookmark.name == name),
+        )
         .unwrap_or_else(|| panic!("CreatePr for {name} not found"));
 
         if let Some(prev) = prev_create_idx {
@@ -497,7 +577,10 @@ async fn test_constraint_display_formatting() {
     // Check that all constraints have valid Display output
     for constraint in &plan.constraints {
         let display = format!("{constraint}");
-        assert!(!display.is_empty(), "constraint display should not be empty");
+        assert!(
+            !display.is_empty(),
+            "constraint display should not be empty"
+        );
         assert!(
             display.contains("→"),
             "constraint display should contain arrow: {display}"

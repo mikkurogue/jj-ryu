@@ -431,7 +431,11 @@ fn print_submission_summary(analysis: &SubmissionAnalysis, options: &SubmitOptio
     println!(
         "Submitting {} bookmark{}{} in stack:",
         analysis.segments.len(),
-        if analysis.segments.len() == 1 { "" } else { "s" },
+        if analysis.segments.len() == 1 {
+            ""
+        } else {
+            "s"
+        },
         options.scope
     );
 
